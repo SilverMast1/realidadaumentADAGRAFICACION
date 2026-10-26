@@ -18,6 +18,9 @@
        las luces, las geometrías tridimensionales, los materiales y el renderizador. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
+  <!-- Google MediaPipe Face Mesh (Versión fijada 0.4.1633559619 para máxima compatibilidad móvil y evitar errores de redirección/CORS en GitHub Pages) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+
   <style>
     /* ==========================================================================
        RESET Y ESTILOS BASE
@@ -101,6 +104,26 @@
       display: flex;
       align-items: center;
       gap: 6px;
+    }
+
+    /* Indicador visual de seguimiento facial (Face Tracking) */
+    .face-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background: rgba(16, 185, 129, 0.25);
+      border: 1px solid rgba(16, 185, 129, 0.6);
+      color: #6ee7b7;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.25s ease;
+    }
+    .face-badge.searching {
+      background: rgba(234, 179, 8, 0.25);
+      border-color: rgba(234, 179, 8, 0.6);
+      color: #fde047;
     }
 
     /* Botones circulares flotantes (cambio de cámara y giroscopio) */
@@ -292,9 +315,10 @@
 
   <!-- Barra Superior: información de estado y controles principales -->
   <div id="top-bar">
-    <!-- Píldora que muestra si está activa la cámara trasera o frontal (selfie) -->
+    <!-- Píldora que muestra si está activa la cámara trasera o frontal (selfie) y estado del autoacomodado -->
     <div class="status-pill">
       <span id="camera-label">📷 Trasera</span>
+      <span id="face-badge" class="face-badge" style="display: none;">🔍 Buscando rostro</span>
     </div>
     <div style="display: flex; gap: 8px;">
       <!-- Botón para activar/desactivar el sensor de giroscopio del móvil (control de vista por orientación) -->
@@ -351,26 +375,26 @@
         videoStream.getTracks().forEach(track => track.stop());
       }
 
-      // Parámetros de solicitud de la cámara (sin audio, resolución deseada HD y modo de lente)
+      // Parámetros de cámara: ideal en facingMode para máxima compatibilidad con Android/iOS
       const constraints = {
         audio: false,
         video: {
-          facingMode: currentFacingMode,
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          facingMode: { ideal: currentFacingMode },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
         }
       };
 
       try {
-        // Solicita permiso al usuario y obtiene el stream de la cámara
         videoStream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = videoStream;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+        video.muted = true;
         await video.play();
 
-        // Si tuvo éxito, nos aseguramos de ocultar la ventana de advertencia de permisos
         document.getElementById('permission-modal').style.display = 'none';
 
-        // Efecto espejo (flip horizontal): en cámara frontal se refleja para que sea intuitivo como un espejo
         if (currentFacingMode === 'user') {
           video.style.transform = 'scaleX(-1)';
           cameraLabel.innerText = '🤳 Selfie / Filtro';
@@ -379,9 +403,23 @@
           cameraLabel.innerText = '📷 Trasera / Mundo';
         }
       } catch (err) {
-        // En caso de que el usuario rechace los permisos o el dispositivo no tenga cámara disponible
-        console.error('Error accediendo a la cámara:', err);
-        document.getElementById('permission-modal').style.display = 'flex';
+        console.warn('Error con resolución ideal, reintentando con configuración básica:', err);
+        try {
+          // Fallback universal para navegadores móviles con restricciones de resolución
+          videoStream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { facingMode: currentFacingMode }
+          });
+          video.srcObject = videoStream;
+          video.setAttribute('playsinline', 'true');
+          video.setAttribute('webkit-playsinline', 'true');
+          video.muted = true;
+          await video.play();
+          document.getElementById('permission-modal').style.display = 'none';
+        } catch (err2) {
+          console.error('Error total accediendo a la cámara:', err2);
+          document.getElementById('permission-modal').style.display = 'flex';
+        }
       }
     }
 
@@ -733,13 +771,18 @@
       glasses.add(leftArm, rightArm);
 
       // Altura ajustada a la zona de los ojos
-      glasses.position.set(0, 0.1, 0);
+      glasses.position.set(0, 0, 0);
 
       // Animación: ciclo continuo de arcoíris neón (cambio de matiz HSL en función del tiempo)
       animLoopFunc = (t) => {
         const hue = (t * 0.2) % 1; // Recorre el espectro cromático de 0 a 1 suavemente
         lensMat.color.setHSL(hue, 1, 0.5);
         lensMat.emissive.setHSL(hue, 1, 0.5);
+        if (catActual !== 'filtros' || !faceDetected) {
+          glasses.position.y = 0.1;
+        } else {
+          glasses.position.y = 0;
+        }
       };
       return glasses;
     }
@@ -780,15 +823,71 @@
         crown.add(gem);
       }
 
-      // Se posiciona más arriba para quedar flotando sobre la cabeza del usuario
-      crown.position.set(0, 0.9, 0);
-
       // Animación: rotación majestuosa y levitación suave
       animLoopFunc = (t) => {
         crown.rotation.y = t * 0.6;
-        crown.position.y = 0.9 + Math.sin(t * 2) * 0.08;
+        if (catActual !== 'filtros' || !faceDetected) {
+          crown.position.y = 0.85 + Math.sin(t * 2) * 0.08;
+        } else {
+          crown.position.y = Math.sin(t * 3) * 0.03;
+        }
       };
       return crown;
+    }
+
+    /**
+     * Modelo: Máscara Cyberpunk Neón
+     * Demuestra: Armadura mandibular angular de ciencia ficción con respiradores laterales y circuito pulsante.
+     */
+    function crearMascaraCyber() {
+      const mask = new THREE.Group();
+
+      // Placa frontal central de la mandíbula
+      const jawGeom = new THREE.BoxGeometry(0.75, 0.55, 0.35);
+      const jawMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.85, roughness: 0.2 });
+      const jaw = new THREE.Mesh(jawGeom, jawMat);
+      jaw.position.set(0, -0.15, 0.1);
+      mask.add(jaw);
+
+      // Respiradores cilíndricos laterales con emisión cian
+      const ventGeom = new THREE.CylinderGeometry(0.16, 0.16, 0.22, 18);
+      const ventMat = new THREE.MeshStandardMaterial({
+        color: 0x00f0ff,
+        emissive: 0x00c8ff,
+        emissiveIntensity: 0.8,
+        metalness: 0.5,
+        roughness: 0.2
+      });
+
+      const leftVent = new THREE.Mesh(ventGeom, ventMat);
+      leftVent.rotation.z = Math.PI / 2;
+      leftVent.position.set(-0.45, -0.16, 0.05);
+
+      const rightVent = new THREE.Mesh(ventGeom, ventMat);
+      rightVent.rotation.z = Math.PI / 2;
+      rightVent.position.set(0.45, -0.16, 0.05);
+
+      mask.add(leftVent, rightVent);
+
+      // Franja de luz carmesí central
+      const stripGeom = new THREE.BoxGeometry(0.45, 0.05, 0.08);
+      const stripMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+      const strip = new THREE.Mesh(stripGeom, stripMat);
+      strip.position.set(0, -0.15, 0.29);
+      mask.add(strip);
+
+      // Animación de pulsación
+      animLoopFunc = (t) => {
+        const pulse = 0.5 + Math.sin(t * 5) * 0.35;
+        ventMat.emissiveIntensity = pulse;
+        strip.scale.x = 1 + Math.sin(t * 7) * 0.2;
+        if (catActual !== 'filtros' || !faceDetected) {
+          mask.position.y = -0.1;
+        } else {
+          mask.position.y = 0;
+        }
+      };
+      return mask;
     }
 
     // ==========================================================================
@@ -808,7 +907,8 @@
       ],
       filtros: [
         { id: 'gafas', nombre: 'Lentes Cyber', icon: '🕶️', fn: crearGafasCyberpunk },
-        { id: 'corona', nombre: 'Corona Real', icon: '👑', fn: crearCoronaReal }
+        { id: 'corona', nombre: 'Corona Real', icon: '👑', fn: crearCoronaReal },
+        { id: 'mascara', nombre: 'Máscara Neón', icon: '🎭', fn: crearMascaraCyber }
       ]
     };
 
@@ -860,15 +960,50 @@
         );
       });
 
-      // Si el usuario selecciona filtros faciales y tiene la cámara trasera, sugerir el cambio a la frontal
-      if (catKey === 'filtros' && currentFacingMode === 'environment') {
-        const toast = document.getElementById('hint-toast');
-        toast.innerText = '💡 Consejo: Cambia a la cámara frontal para usar los filtros';
-        toast.style.background = 'rgba(234, 88, 12, 0.85)';
+      // Gestión del modo de filtros con autoacomodado facial
+      const badge = document.getElementById('face-badge');
+      const toast = document.getElementById('hint-toast');
+
+      if (catKey === 'filtros') {
+        if (badge) {
+          badge.style.display = 'inline-flex';
+          badge.className = isFaceMeshReady ? 'face-badge searching' : 'face-badge searching';
+          badge.innerText = isFaceMeshReady ? '🔍 Buscando rostro' : '⏳ Cargando IA...';
+        }
+
+        // En celulares: conmutar AUTOMÁTICAMENTE a cámara frontal selfie al entrar a Filtros
+        if (currentFacingMode !== 'user') {
+          currentFacingMode = 'user';
+          iniciarCamara();
+          toast.innerText = '🤳 Cambiando a cámara frontal para autoacomodar filtro...';
+          toast.style.background = 'rgba(59, 130, 246, 0.85)';
+        } else {
+          toast.innerText = isFaceMeshReady ? '✨ Auto-fit activo • Mira hacia la cámara frontal' : '⏳ Preparando modelo facial...';
+          toast.style.background = 'rgba(16, 185, 129, 0.85)';
+        }
+
         setTimeout(() => {
-          toast.innerText = 'Toca y arrastra para rotar • Pellizca para tamaño';
-          toast.style.background = 'rgba(0, 0, 0, 0.7)';
-        }, 4000);
+          if (catActual === 'filtros' && toast) {
+            toast.innerText = faceDetected ? '🟢 Filtro fijado a tu rostro' : '✨ Filtro facial con detección automática';
+            toast.style.background = 'rgba(0, 0, 0, 0.7)';
+          }
+        }, 3500);
+      } else {
+        if (badge) badge.style.display = 'none';
+        faceDetected = false;
+        // Restaurar ancla a posición y escala neutral
+        targetFacePos.set(0, 0, 0);
+        targetFaceRot.set(0, 0, 0);
+        targetFaceScale = 1;
+        currentFacePos.set(0, 0, 0);
+        currentFaceRot.set(0, 0, 0);
+        currentFaceScale = 1;
+        rootAnchor.position.set(0, 0, 0);
+        rootAnchor.rotation.set(0, 0, 0);
+        rootAnchor.scale.set(1, 1, 1);
+
+        toast.innerText = 'Toca y arrastra para rotar • Pellizca para tamaño';
+        toast.style.background = 'rgba(0, 0, 0, 0.7)';
       }
 
       // Reconstruir dinámicamente las tarjetas del carrusel en el DOM
@@ -905,6 +1040,8 @@
     window.addEventListener('touchstart', (e) => {
       // Ignorar toques sobre la interfaz de usuario (botones y carrusel)
       if (e.target.closest('#bottom-container') || e.target.closest('#top-bar')) return;
+      // Si el filtro está siguiendo activamente el rostro, no interferir con toques accidentales
+      if (catActual === 'filtros' && faceDetected) return;
 
       if (e.touches.length === 1) {
         // Un solo dedo: Iniciar rotación del objeto 3D
@@ -957,6 +1094,7 @@
     // B. Soporte para ratón en computadoras de escritorio (pruebas y depuración)
     window.addEventListener('mousedown', (e) => {
       if (e.target.closest('#bottom-container') || e.target.closest('#top-bar')) return;
+      if (catActual === 'filtros' && faceDetected) return;
       isDragging = true;
       prevMousePos.x = e.clientX;
       prevMousePos.y = e.clientY;
@@ -1061,6 +1199,11 @@
         animLoopFunc(elapsedTime);
       }
 
+      // Si estamos en la categoría de filtros faciales, ejecutamos el autoacomodado por visión artificial
+      if (catActual === 'filtros') {
+        actualizarAutoAcomodado();
+      }
+
       // Dibuja la escena completa desde el punto de vista de la cámara virtual sobre el canvas
       renderer.render(scene, camera);
     }
@@ -1079,10 +1222,277 @@
     });
 
     // ==========================================================================
+    // 9. DETECCIÓN FACIAL Y AUTO-ACOMODADO CON MEDIAPIPE FACE MESH
+    // Permite que los filtros 3D detecten el rostro del usuario y se ajusten
+    // automáticamente a su posición (X, Y, Z), rotación (Pitch/Yaw/Roll) y escala.
+    // ==========================================================================
+
+    const MEDIAPIPE_VERSION = '0.4.1633559619';
+    const MEDIAPIPE_CDN = `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@${MEDIAPIPE_VERSION}/`;
+
+    let faceMesh = null;
+    let isFaceMeshReady = false;
+    let isProcessingFrame = false;
+    let faceDetected = false;
+    let lastFaceDetectionTime = 0;
+    let lastFrameProcessTime = 0;
+
+    // Vectores para interpolación suave (evitan vibraciones/temblores de la cámara)
+    const currentFacePos = new THREE.Vector3(0, 0, 0);
+    const targetFacePos = new THREE.Vector3(0, 0, 0);
+
+    const currentFaceRot = new THREE.Euler(0, 0, 0);
+    const targetFaceRot = new THREE.Euler(0, 0, 0);
+
+    let currentFaceScale = 1;
+    let targetFaceScale = 1;
+
+    /**
+     * Inicializa MediaPipe Face Mesh de forma asíncrona mediante CDN versionado.
+     */
+    function initFaceTracking() {
+      if (typeof FaceMesh === 'undefined') {
+        console.warn('MediaPipe FaceMesh aún no está listo o cargando desde CDN.');
+        // Reintentar en 800ms si el script sigue descargándose
+        setTimeout(initFaceTracking, 800);
+        return;
+      }
+
+      try {
+        faceMesh = new FaceMesh({
+          locateFile: (file) => `${MEDIAPIPE_CDN}${file}`
+        });
+
+        faceMesh.setOptions({
+          maxNumFaces: 1,
+          refineLandmarks: false, // Modo estándar: optimizado para alta velocidad en celulares Android e iOS
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults(onFaceResults);
+        isFaceMeshReady = true;
+        console.log('✅ MediaPipe FaceMesh inicializado exitosamente.');
+
+        const badge = document.getElementById('face-badge');
+        if (badge && catActual === 'filtros' && !faceDetected) {
+          badge.innerText = '🔍 Buscando rostro';
+        }
+      } catch (err) {
+        console.error('Error al inicializar FaceMesh:', err);
+      }
+    }
+
+    /**
+     * Transforma una coordenada de landmark normalizado [0, 1] a coordenadas en pantalla
+     * teniendo en cuenta object-fit: cover y el posible efecto espejo (en cámara frontal).
+     */
+    function landmarkToScreen(lm) {
+      const videoW = video.videoWidth || 640;
+      const videoH = video.videoHeight || 480;
+      const screenW = window.innerWidth;
+      const screenH = window.innerHeight;
+
+      const screenAspect = screenW / screenH;
+      const videoAspect = videoW / videoH;
+      let renderW, renderH, offsetX = 0, offsetY = 0;
+
+      if (screenAspect > videoAspect) {
+        renderW = screenW;
+        renderH = screenW / videoAspect;
+        offsetY = (screenH - renderH) / 2;
+      } else {
+        renderH = screenH;
+        renderW = screenH * videoAspect;
+        offsetX = (screenW - renderW) / 2;
+      }
+
+      // En cámara frontal (selfie), el video tiene transform: scaleX(-1)
+      const normX = (currentFacingMode === 'user') ? (1 - lm.x) : lm.x;
+      const screenX = offsetX + normX * renderW;
+      const screenY = offsetY + lm.y * renderH;
+
+      return { x: screenX, y: screenY };
+    }
+
+    /**
+     * Convierte una coordenada de píxel en pantalla (screenX, screenY) a coordenadas del mundo 3D
+     * de Three.js proyectadas sobre el plano de profundidad de la cámara.
+     */
+    function screenToWorld(screenX, screenY, atZ = 0) {
+      const dist = camera.position.z - atZ; // Distancia focal
+      const vHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * dist;
+      const vWidth = vHeight * camera.aspect;
+
+      const ndcX = (screenX / window.innerWidth) * 2 - 1;
+      const ndcY = -(screenY / window.innerHeight) * 2 + 1;
+
+      return {
+        x: ndcX * (vWidth / 2),
+        y: ndcY * (vHeight / 2)
+      };
+    }
+
+    /**
+     * Callback de MediaPipe que recibe las coordenadas faciales 3D detectadas.
+     */
+    function onFaceResults(results) {
+      const badge = document.getElementById('face-badge');
+
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        faceDetected = true;
+        lastFaceDetectionTime = performance.now();
+
+        if (badge) {
+          badge.className = 'face-badge';
+          badge.innerText = '🟢 Rostro fijado';
+        }
+
+        const lms = results.multiFaceLandmarks[0];
+
+        // Puntos anatómicos clave:
+        // 33: esquina exterior ojo derecho | 263: esquina exterior ojo izquierdo
+        // 168: puente nasal (entrecejo) | 10: parte superior frente | 1: punta nariz | 152: mentón
+        // 234: sien derecha | 454: sien izquierda
+        const sRightEye = landmarkToScreen(lms[33]);
+        const sLeftEye = landmarkToScreen(lms[263]);
+        const wRightEye = screenToWorld(sRightEye.x, sRightEye.y);
+        const wLeftEye = screenToWorld(sLeftEye.x, sLeftEye.y);
+
+        // Identificar cuál ojo está a la izquierda de la pantalla y cuál a la derecha (invariante al modo espejo)
+        const pLeftScreen = (wRightEye.x < wLeftEye.x) ? wRightEye : wLeftEye;
+        const pRightScreen = (wRightEye.x < wLeftEye.x) ? wLeftEye : wRightEye;
+
+        // 1. ROTACIÓN ROLL (Inclinación lateral sobre eje Z)
+        const rollAngle = Math.atan2(pRightScreen.y - pLeftScreen.y, pRightScreen.x - pLeftScreen.x);
+
+        // 2. ROTACIÓN YAW (Giro izquierda / derecha sobre eje Y)
+        const midTempleX = (lms[234].x + lms[454].x) / 2;
+        const templeSpan = Math.abs(lms[454].x - lms[234].x) || 0.001;
+        const rawYaw = (lms[1].x - midTempleX) / (templeSpan * 0.5);
+        const yawAngle = (currentFacingMode === 'user' ? -1 : 1) * rawYaw * 1.2;
+
+        // 3. ROTACIÓN PITCH (Mirar arriba / abajo sobre eje X)
+        const midY = (lms[168].y + lms[152].y) / 2;
+        const faceHeightNorm = Math.abs(lms[152].y - lms[168].y) || 0.001;
+        const rawPitch = (lms[1].y - midY) / (faceHeightNorm * 0.5);
+        const pitchAngle = -(rawPitch + 0.05) * 1.2;
+
+        targetFaceRot.set(
+          Math.max(-0.6, Math.min(0.6, pitchAngle)),
+          Math.max(-0.7, Math.min(0.7, yawAngle)),
+          rollAngle
+        );
+
+        // 4. DISTANCIAS Y ESCALA DEL ROSTRO
+        const worldEyeDist = Math.hypot(pRightScreen.x - pLeftScreen.x, pRightScreen.y - pLeftScreen.y);
+
+        const sTemple1 = landmarkToScreen(lms[234]);
+        const sTemple2 = landmarkToScreen(lms[454]);
+        const wTemple1 = screenToWorld(sTemple1.x, sTemple1.y);
+        const wTemple2 = screenToWorld(sTemple2.x, sTemple2.y);
+        const worldTempleDist = Math.hypot(wTemple2.x - wTemple1.x, wTemple2.y - wTemple1.y);
+
+        // 5. POSICIONAMIENTO Y ESCALA SEGÚN EL FILTRO SELECCIONADO
+        if (idSeleccionado === 'gafas') {
+          // Anclaje: entrecejo / puente de la nariz (landmark 168)
+          const sBridge = landmarkToScreen(lms[168]);
+          const wBridge = screenToWorld(sBridge.x, sBridge.y);
+
+          targetFacePos.set(wBridge.x, wBridge.y, 0.2);
+          targetFaceScale = (worldEyeDist * 1.6) / 1.4;
+        } else if (idSeleccionado === 'corona') {
+          // Anclaje: parte superior de la frente (landmark 10)
+          const sForehead = landmarkToScreen(lms[10]);
+          const wForehead = screenToWorld(sForehead.x, sForehead.y);
+
+          // Escala de la corona acorde al ancho craneal
+          targetFaceScale = (worldTempleDist * 1.05) / 1.4;
+
+          // Desplazamiento hacia arriba a lo largo del vector orientado de la cabeza
+          const upVectorX = -Math.sin(rollAngle);
+          const upVectorY = Math.cos(rollAngle);
+          const crownOffset = 0.35 * targetFaceScale;
+
+          targetFacePos.set(
+            wForehead.x + upVectorX * crownOffset,
+            wForehead.y + upVectorY * crownOffset,
+            0.0
+          );
+        } else if (idSeleccionado === 'mascara') {
+          // Anclaje: parte inferior de la nariz / labio superior (landmark 2 o 1)
+          const sNose = landmarkToScreen(lms[2] || lms[1]);
+          const wNose = screenToWorld(sNose.x, sNose.y);
+
+          targetFacePos.set(wNose.x, wNose.y, 0.25);
+          targetFaceScale = (worldTempleDist * 0.9) / 1.2;
+        }
+      } else {
+        // Si no se detecta rostro por más de 1200ms, regresar suavemente a neutral
+        if (performance.now() - lastFaceDetectionTime > 1200) {
+          faceDetected = false;
+          if (badge) {
+            badge.className = 'face-badge searching';
+            badge.innerText = '🔍 Buscando rostro';
+          }
+          targetFacePos.set(0, 0, 0);
+          targetFaceRot.set(0, 0, 0);
+          targetFaceScale = 1;
+        }
+      }
+    }
+
+    /**
+     * Envía de forma asíncrona el fotograma actual de video a MediaPipe.
+     */
+    async function procesarFrameFacial() {
+      if (!faceMesh || !isFaceMeshReady || isProcessingFrame) return;
+      if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) return;
+
+      // Limitar la frecuencia en celulares a ~25 FPS para no calentar la batería ni saturar la GPU
+      const now = performance.now();
+      if (now - lastFrameProcessTime < 40) return;
+      lastFrameProcessTime = now;
+
+      isProcessingFrame = true;
+      try {
+        await faceMesh.send({ image: video });
+      } catch (err) {
+        console.warn('Frame omitido en FaceMesh:', err);
+      } finally {
+        isProcessingFrame = false;
+      }
+    }
+
+    /**
+     * Aplica interpolación lineal (Lerp) en cada fotograma del render loop.
+     * Solo sobreescribe el contenedor si el rostro está activamente detectado.
+     */
+    function actualizarAutoAcomodado() {
+      procesarFrameFacial();
+
+      if (faceDetected) {
+        const lerpSpeed = 0.35;
+
+        currentFacePos.lerp(targetFacePos, lerpSpeed);
+        rootAnchor.position.copy(currentFacePos);
+
+        currentFaceRot.x += (targetFaceRot.x - currentFaceRot.x) * lerpSpeed;
+        currentFaceRot.y += (targetFaceRot.y - currentFaceRot.y) * lerpSpeed;
+        currentFaceRot.z += (targetFaceRot.z - currentFaceRot.z) * lerpSpeed;
+        rootAnchor.rotation.copy(currentFaceRot);
+
+        currentFaceScale += (targetFaceScale - currentFaceScale) * lerpSpeed;
+        rootAnchor.scale.set(currentFaceScale, currentFaceScale, currentFaceScale);
+      }
+    }
+
+    // ==========================================================================
     // INICIALIZACIÓN DE LA APLICACIÓN
     // ==========================================================================
     cambiarCategoria('figuras'); // Carga la categoría inicial con el primer modelo
     iniciarCamara();             // Solicita acceso a la cámara y comienza la transmisión
+    initFaceTracking();          // Inicializa el modelo de detección facial de MediaPipe
     animate();                   // Inicia el ciclo de renderizado continuo
   </script>
 </body>
