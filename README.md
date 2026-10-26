@@ -19,7 +19,6 @@ Aplicación Web de **Realidad Aumentada sin marcadores**, compatible con cualqui
    - 🎭 **Filtros AR:**
      - **Lentes Cyberpunk**: Gafas de sol futuristas con pulso de color RGB dinámico.
      - **Corona Real**: Corona dorada con diamantes y rubíes flotando sobre la cabeza.
-     - **Máscara Sci-Fi**: Respirador táctico y visor holográfico.
 4. **Interacción Táctil Completa**:
    - **Girar:** Desliza 1 dedo para rotar la figura 360° en cualquier dirección.
    - **Zoom / Escala:** Pellizca con 2 dedos para agrandar o achicar el objeto.

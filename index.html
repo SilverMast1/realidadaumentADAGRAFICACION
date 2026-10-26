@@ -1,18 +1,32 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+  <!-- Definición del juego de caracteres estándar para admitir tildes y caracteres especiales -->
   <meta charset="UTF-8">
+
+  <!-- Configuración del viewport para dispositivos móviles:
+       - width=device-width: ajusta el ancho al tamaño físico de la pantalla.
+       - initial-scale=1.0: nivel inicial de zoom sin aumento.
+       - user-scalable=no: bloquea el zoom nativo del navegador para que los gestos táctiles (pellizcar/rotar)
+         sean interpretados exclusivamente por la aplicación 3D y no por el navegador. -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
   <title>Realidad Aumentada sin Marcadores - WebAR</title>
   
-  <!-- Three.js para renderizado 3D de alto rendimiento -->
+  <!-- Biblioteca Three.js (r128):
+       Motor de gráficos 3D en JavaScript basado en WebGL. Proporciona la escena, la cámara virtual,
+       las luces, las geometrías tridimensionales, los materiales y el renderizador. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
   <style>
+    /* ==========================================================================
+       RESET Y ESTILOS BASE
+       Garantiza que no haya márgenes no deseados y evita la selección accidental de texto al interactuar.
+       ========================================================================== */
     * {
-      box-sizing: border-box;
-      user-select: none;
-      -webkit-user-select: none;
+      box-sizing: border-box;            /* Incluye padding y bordes dentro del tamaño total del elemento */
+      user-select: none;                 /* Evita la selección de texto en navegadores estándar */
+      -webkit-user-select: none;         /* Compatibilidad con Safari/iOS */
       margin: 0;
       padding: 0;
     }
@@ -20,51 +34,63 @@
     body, html {
       width: 100%;
       height: 100%;
-      overflow: hidden;
-      background-color: #000;
+      overflow: hidden;                 /* Oculta barras de desplazamiento para una experiencia inmersiva */
+      background-color: #000;           /* Fondo negro mientras carga la cámara */
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
 
-    /* Video de la cámara de fondo */
+    /* ==========================================================================
+       CAPA 1: VIDEO DE LA CÁMARA REAL (FONDO)
+       Muestra la transmisión en vivo de la cámara del dispositivo.
+       ========================================================================== */
     #camera-video {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
-      z-index: 1;
-      transform: scaleX(1); /* Dinámico según cámara frontal o trasera */
-      transition: transform 0.3s ease;
+      object-fit: cover;                 /* Escala el video para llenar toda la pantalla sin deformar la proporción */
+      z-index: 1;                        /* Capa 1: se coloca al fondo, detrás del canvas 3D */
+      transform: scaleX(1);              /* Normal (1) para cámara trasera; se invertirá a (-1) en modo selfie */
+      transition: transform 0.3s ease;   /* Transición suave al cambiar de orientación de cámara */
     }
 
-    /* Canvas 3D de Three.js sobrepuesto */
+    /* ==========================================================================
+       CAPA 2: CANVAS 3D (THREE.JS / WEBGL)
+       Capa transparente donde se dibujan los objetos tridimensionales sobre el video.
+       ========================================================================== */
     #three-canvas {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      z-index: 2;
-      pointer-events: auto;
+      z-index: 2;                        /* Capa 2: sobre el video para lograr el efecto de Realidad Aumentada */
+      pointer-events: auto;              /* Permite recibir toques y clics para manipular los modelos 3D */
     }
 
-    /* Barra Superior */
+    /* ==========================================================================
+       CAPA 3: INTERFAZ DE USUARIO (UI / HUD)
+       Botones, indicadores y controles superpuestos en la pantalla.
+       ========================================================================== */
+    
+    /* Barra superior: contiene el indicador de cámara y botones de acción */
     #top-bar {
       position: absolute;
       top: 15px;
       left: 15px;
       right: 15px;
-      z-index: 10;
+      z-index: 10;                       /* Nivel superior para estar siempre accesible sobre el 3D */
       display: flex;
-      justify-content: space-between;
+      justify-content: space-between;   /* Distribuye los elementos a los extremos */
       align-items: center;
-      pointer-events: none;
+      pointer-events: none;              /* No bloquea toques a la escena 3D, excepto en sus botones hijos */
     }
 
+    /* Etiqueta tipo píldora que indica qué cámara está activa */
     .status-pill {
-      background: rgba(15, 23, 42, 0.75);
-      backdrop-filter: blur(10px);
+      background: rgba(15, 23, 42, 0.75); /* Fondo oscuro semitransparente */
+      backdrop-filter: blur(10px);        /* Desenfoque tipo cristal esmerilado (Glassmorphism) */
       color: #fff;
       padding: 8px 14px;
       border-radius: 20px;
@@ -77,8 +103,9 @@
       gap: 6px;
     }
 
+    /* Botones circulares flotantes (cambio de cámara y giroscopio) */
     .round-btn {
-      pointer-events: auto;
+      pointer-events: auto;              /* Reactiva los eventos táctiles y de clic para los botones */
       background: rgba(30, 41, 59, 0.85);
       backdrop-filter: blur(10px);
       color: #fff;
@@ -95,12 +122,13 @@
       transition: transform 0.2s, background 0.2s;
     }
 
+    /* Efecto visual al presionar un botón */
     .round-btn:active {
-      transform: scale(0.92);
-      background: #3b82f6;
+      transform: scale(0.92);            /* Pequeña reducción para retroalimentación táctil */
+      background: #3b82f6;               /* Resaltado en color azul */
     }
 
-    /* Barra Inferior y Selector de Categorías */
+    /* Contenedor inferior: alberga las pestañas de categorías y el carrusel de modelos */
     #bottom-container {
       position: absolute;
       bottom: 20px;
@@ -111,12 +139,12 @@
       flex-direction: column;
       align-items: center;
       gap: 12px;
-      pointer-events: none;
+      pointer-events: none;              /* Permite interactuar con el 3D en zonas vacías */
     }
 
-    /* Selector de pestañas: Figuras, Personajes, Filtros */
+    /* Barra de pestañas para cambiar de categoría (Figuras, Personajes, Filtros) */
     .tab-pills {
-      pointer-events: auto;
+      pointer-events: auto;              /* Reactiva toques sobre los botones de pestañas */
       background: rgba(15, 23, 42, 0.85);
       backdrop-filter: blur(12px);
       padding: 4px;
@@ -126,6 +154,7 @@
       border: 1px solid rgba(255, 255, 255, 0.15);
     }
 
+    /* Botón individual de pestaña */
     .tab-btn {
       background: transparent;
       border: none;
@@ -138,26 +167,28 @@
       transition: all 0.25s ease;
     }
 
+    /* Estilo de la pestaña activa actualmente */
     .tab-btn.active {
-      background: #3b82f6;
+      background: #3b82f6;               /* Fondo azul vibrante */
       color: #fff;
       box-shadow: 0 2px 10px rgba(59, 130, 246, 0.5);
     }
 
-    /* Carrusel de elementos seleccionables */
+    /* Carrusel deslizable horizontal para seleccionar los modelos 3D */
     .items-scroll {
       pointer-events: auto;
       display: flex;
       gap: 10px;
       max-width: 95vw;
-      overflow-x: auto;
+      overflow-x: auto;                  /* Permite desplazamiento horizontal */
       padding: 6px 12px;
-      scrollbar-width: none;
+      scrollbar-width: none;             /* Oculta la barra de scroll en Firefox */
     }
     .items-scroll::-webkit-scrollbar {
-      display: none;
+      display: none;                     /* Oculta la barra de scroll en Chrome, Safari y Edge */
     }
 
+    /* Tarjeta individual de cada modelo 3D en el carrusel */
     .item-card {
       background: rgba(15, 23, 42, 0.8);
       backdrop-filter: blur(8px);
@@ -181,37 +212,38 @@
       font-size: 22px;
     }
 
+    /* Estilo de la tarjeta del modelo que está seleccionado y renderizándose */
     .item-card.active {
       border-color: #3b82f6;
       background: rgba(59, 130, 246, 0.35);
-      transform: translateY(-3px);
+      transform: translateY(-3px);       /* Efecto de elevación */
       box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
     }
 
-    /* Mensaje guía flotante */
+    /* Mensaje flotante con instrucciones para el usuario (rotar/escalar) */
     #hint-toast {
       position: absolute;
       top: 75px;
       left: 50%;
-      transform: translateX(-50%);
+      transform: translateX(-50%);       /* Centrado horizontal automático */
       background: rgba(0, 0, 0, 0.7);
       color: #e2e8f0;
       padding: 6px 16px;
       border-radius: 15px;
       font-size: 12px;
       font-weight: 500;
-      pointer-events: none;
+      pointer-events: none;              /* No bloquea toques a la escena */
       z-index: 10;
-      transition: opacity 0.4s;
+      transition: opacity 0.4s, background 0.4s;
     }
 
-    /* Modal de permisos de cámara */
+    /* Ventana emergente (modal) para solicitar permisos de cámara si están bloqueados */
     #permission-modal {
-      display: none;
+      display: none;                     /* Oculto por defecto; se muestra si falla el acceso a la cámara */
       position: absolute;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.9);
-      z-index: 100;
+      inset: 0;                          /* Ocupa toda la pantalla (top:0, left:0, right:0, bottom:0) */
+      background: rgba(0, 0, 0, 0.9);    /* Fondo oscuro para concentrar la atención */
+      z-index: 100;                      /* Máxima prioridad visual */
       flex-direction: column;
       justify-content: center;
       align-items: center;
@@ -232,6 +264,7 @@
       max-width: 320px;
     }
 
+    /* Botón para conceder permisos dentro del modal */
     .btn-grant {
       background: #3b82f6;
       color: white;
@@ -246,43 +279,50 @@
 </head>
 <body>
 
-  <!-- Elemento de Video para la Cámara del Teléfono -->
+  <!-- ========================================================================
+       ELEMENTO DE VIDEO DE LA CÁMARA
+       playsinline: evita que iOS abra el video en pantalla completa de reproducción nativa.
+       autoplay: reproduce el flujo de la cámara inmediatamente al recibirlo.
+       muted: requerido por navegadores móviles para permitir la reproducción automática sin audio.
+       ======================================================================== -->
   <video id="camera-video" playsinline autoplay muted></video>
 
-  <!-- Canvas WebGL 3D -->
+  <!-- Contenedor donde se insertará el elemento <canvas> WebGL generado por Three.js -->
   <div id="three-canvas"></div>
 
-  <!-- Barra Superior -->
+  <!-- Barra Superior: información de estado y controles principales -->
   <div id="top-bar">
+    <!-- Píldora que muestra si está activa la cámara trasera o frontal (selfie) -->
     <div class="status-pill">
       <span id="camera-label">📷 Trasera</span>
     </div>
     <div style="display: flex; gap: 8px;">
-      <!-- Botón para alternar sensores de giroscopio/rotación -->
+      <!-- Botón para activar/desactivar el sensor de giroscopio del móvil (control de vista por orientación) -->
       <button class="round-btn" id="btn-gyro" title="Giroscopio / AR">🧭</button>
-      <!-- Botón para Cambiar entre Cámara Frontal y Trasera -->
+      <!-- Botón para alternar entre cámara frontal y trasera -->
       <button class="round-btn" id="btn-switch-cam" title="Cambiar Cámara">🔄</button>
     </div>
   </div>
 
+  <!-- Mensaje informativo flotante con la guía de interacción para el usuario -->
   <div id="hint-toast">Toca y arrastra para rotar • Pellizca para tamaño</div>
 
-  <!-- Barra Inferior -->
+  <!-- Barra Inferior: Selector de categorías y carrusel de selección de objetos 3D -->
   <div id="bottom-container">
-    <!-- Pestañas -->
+    <!-- Pestañas para filtrar por tipo de objeto -->
     <div class="tab-pills">
       <button class="tab-btn active" onclick="cambiarCategoria('figuras')">🔷 Figuras</button>
       <button class="tab-btn" onclick="cambiarCategoria('personajes')">🤖 Personajes</button>
       <button class="tab-btn" onclick="cambiarCategoria('filtros')">🎭 Filtros</button>
     </div>
 
-    <!-- Carrusel dinámico de opciones -->
+    <!-- Carrusel horizontal de elementos que se genera dinámicamente mediante JavaScript -->
     <div class="items-scroll" id="items-list">
-      <!-- Se llena por JavaScript -->
+      <!-- Los elementos (.item-card) se insertan dinámicamente -->
     </div>
   </div>
 
-  <!-- Modal para solicitar permisos si fue bloqueado -->
+  <!-- Modal de advertencia en caso de que la cámara no cuente con permisos o falle -->
   <div id="permission-modal">
     <h2>Se requiere la cámara</h2>
     <p>Para ver la Realidad Aumentada sin marcadores, por favor concede permiso de acceso a la cámara de tu celular.</p>
@@ -290,19 +330,28 @@
   </div>
 
   <script>
-    // ==========================================
-    // 1. CONFIGURACIÓN DE CÁMARA (FRONTAL / TRASERA)
-    // ==========================================
-    let currentFacingMode = 'environment'; // 'environment' (trasera) o 'user' (frontal)
-    let videoStream = null;
+    // ==========================================================================
+    // 1. CONFIGURACIÓN Y GESTIÓN DE LA CÁMARA (WEBRTC / getUserMedia)
+    // ==========================================================================
+    
+    // Estado de la cámara: 'environment' (cámara trasera para ver el entorno) o 'user' (cámara frontal para selfies)
+    let currentFacingMode = 'environment';
+    let videoStream = null; // Almacenará la referencia al flujo de video activo para poder detenerlo al cambiar
+
+    // Referencias a los elementos del DOM
     const video = document.getElementById('camera-video');
     const cameraLabel = document.getElementById('camera-label');
 
+    /**
+     * Inicia o reinicia la captura de video de la cámara del dispositivo usando la API de medios de HTML5.
+     */
     async function iniciarCamara() {
+      // Si ya hay un flujo de video activo, detenemos todas sus pistas para liberar la cámara del hardware
       if (videoStream) {
         videoStream.getTracks().forEach(track => track.stop());
       }
 
+      // Parámetros de solicitud de la cámara (sin audio, resolución deseada HD y modo de lente)
       const constraints = {
         audio: false,
         video: {
@@ -313,12 +362,15 @@
       };
 
       try {
+        // Solicita permiso al usuario y obtiene el stream de la cámara
         videoStream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = videoStream;
         await video.play();
+
+        // Si tuvo éxito, nos aseguramos de ocultar la ventana de advertencia de permisos
         document.getElementById('permission-modal').style.display = 'none';
 
-        // Espejo en cámara frontal para efecto natural de selfie
+        // Efecto espejo (flip horizontal): en cámara frontal se refleja para que sea intuitivo como un espejo
         if (currentFacingMode === 'user') {
           video.style.transform = 'scaleX(-1)';
           cameraLabel.innerText = '🤳 Selfie / Filtro';
@@ -327,64 +379,90 @@
           cameraLabel.innerText = '📷 Trasera / Mundo';
         }
       } catch (err) {
+        // En caso de que el usuario rechace los permisos o el dispositivo no tenga cámara disponible
         console.error('Error accediendo a la cámara:', err);
         document.getElementById('permission-modal').style.display = 'flex';
       }
     }
 
+    // Evento de clic en el botón de alternar cámara: conmuta entre 'environment' y 'user'
     document.getElementById('btn-switch-cam').addEventListener('click', () => {
       currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
       iniciarCamara();
     });
 
-    // ==========================================
-    // 2. CONFIGURACIÓN DE THREE.JS (ESCENA 3D)
-    // ==========================================
+    // ==========================================================================
+    // 2. CONFIGURACIÓN DE THREE.JS (ESCENA, CÁMARA, RENDERIZADOR Y LUCES)
+    // ==========================================================================
+    
+    // Contenedor HTML donde se añadirá el canvas WebGL
     const container = document.getElementById('three-canvas');
+
+    // 1. Escena: Contenedor global donde residen todos los objetos 3D, mallas y luces
     const scene = new THREE.Scene();
 
+    // 2. Cámara de perspectiva: Simula el ojo humano con perspectiva realista
+    // Parámetros: FOV (campo de visión en grados = 60), Relación de aspecto (ancho/alto), Plano cercano (0.1), Plano lejano (1000)
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 0, 3.5);
+    camera.position.set(0, 0, 3.5); // Posiciona la cámara a 3.5 unidades hacia atrás en el eje Z
 
+    // 3. Renderizador WebGL:
+    // alpha: true -> CRÍTICO PARA REALIDAD AUMENTADA. Permite que el fondo del canvas sea transparente
+    // para que se pueda ver el video de la cámara por detrás de los objetos 3D.
+    // antialias: true -> Suaviza los bordes dentados (aliasing) de las figuras geométricas.
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Optimiza la nitidez en pantallas Retina sin sobrecargar la GPU
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;           // Mapeo tonal cinematográfico para colores más ricos y realistas
     container.appendChild(renderer.domElement);
 
-    // Luces dinámicas
+    // 4. Iluminación de la escena:
+    // Luz ambiental: ilumina uniformemente todas las caras de los objetos en todas las direcciones para evitar sombras negras absolutas
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
     scene.add(ambientLight);
 
+    // Luz direccional 1: simula una fuente de luz lejana (como el sol o foco de estudio) con tono cian (#38bdf8)
     const dirLight1 = new THREE.DirectionalLight(0x38bdf8, 2.0);
     dirLight1.position.set(5, 10, 7);
     scene.add(dirLight1);
 
+    // Luz direccional 2: luz de contra con tono rosa/magenta (#f43f5e) para crear reflejos artísticos en los bordes
     const dirLight2 = new THREE.DirectionalLight(0xf43f5e, 1.5);
     dirLight2.position.set(-5, -5, 5);
     scene.add(dirLight2);
 
-    // Contenedor principal del objeto activo
+    // 5. Nodo Raíz o Ancla (THREE.Group):
+    // Es un contenedor padre. Todas las transformaciones globales (rotar con el dedo, escalar con pellizco)
+    // se aplican a este grupo sin alterar la lógica interna de animación de cada modelo.
     const rootAnchor = new THREE.Group();
     scene.add(rootAnchor);
 
-    // ==========================================
-    // 3. CATÁLOGO DE MODELOS Y GENERACIÓN 3D
-    // ==========================================
-    let activeObject = null;
-    let animLoopFunc = null;
+    // ==========================================================================
+    // 3. CATÁLOGO DE MODELOS Y GENERACIÓN PROCEDIMENTAL 3D
+    // ==========================================================================
+    
+    let activeObject = null;  // Referencia al objeto 3D que se encuentra actualmente en pantalla
+    let animLoopFunc = null;  // Función personalizada que se ejecuta en cada fotograma para animar el objeto activo
 
-    // A. FIGURAS GEOMÉTRICAS 3D
+    // --------------------------------------------------------------------------
+    // A. CATEGORÍA: FIGURAS GEOMÉTRICAS 3D
+    // --------------------------------------------------------------------------
+
+    /**
+     * Modelo: Hipercubo Cuántico
+     * Demuestra: Materiales físicos con transmisión de luz (vidrio/acrílico), mallas de aristas (EdgesGeometry)
+     * y un octaedro central con material emisivo (autoiluminado).
+     */
     function crearHipercubo() {
       const group = new THREE.Group();
       
-      // Cubo exterior transparente
+      // 1. Cubo exterior transparente con efecto de cristal
       const geomExt = new THREE.BoxGeometry(1.2, 1.2, 1.2);
       const matExt = new THREE.MeshPhysicalMaterial({
         color: 0x06b6d4,
-        roughness: 0.1,
-        transmission: 0.8,
-        thickness: 0.5,
+        roughness: 0.1,        // Superficie muy lisa
+        transmission: 0.8,     // Simula refracción y transparencia de vidrio
+        thickness: 0.5,        // Grosor del vidrio
         wireframe: false,
         transparent: true,
         opacity: 0.6
@@ -392,16 +470,16 @@
       const boxExt = new THREE.Mesh(geomExt, matExt);
       group.add(boxExt);
 
-      // Líneas de aristas brillantes
+      // 2. Líneas brillantes en las aristas del cubo
       const edges = new THREE.EdgesGeometry(geomExt);
       const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 }));
       group.add(line);
 
-      // Núcleo octaédrico interior
+      // 3. Núcleo interior: Octaedro con resplandor emisivo
       const geomInt = new THREE.OctahedronGeometry(0.5, 0);
       const matInt = new THREE.MeshStandardMaterial({
         color: 0xf43f5e,
-        emissive: 0xe11d48,
+        emissive: 0xe11d48,         // Emite su propia luz roja
         emissiveIntensity: 0.8,
         metalness: 0.8,
         roughness: 0.2
@@ -409,6 +487,7 @@
       const boxInt = new THREE.Mesh(geomInt, matInt);
       group.add(boxInt);
 
+      // Bucle de animación: rota el cubo exterior y hace latir/pulsar el núcleo interior
       animLoopFunc = (t) => {
         boxExt.rotation.x = t * 0.8;
         boxExt.rotation.y = t * 1.1;
@@ -416,14 +495,20 @@
         line.rotation.y = t * 1.1;
         boxInt.rotation.x = -t * 1.5;
         boxInt.rotation.z = t * 1.3;
-        const scale = 0.5 + Math.sin(t * 3) * 0.1;
+        const scale = 0.5 + Math.sin(t * 3) * 0.1; // Pulsación matemática con seno
         boxInt.scale.set(scale, scale, scale);
       };
       return group;
     }
 
+    /**
+     * Modelo: Cristal Cósmico
+     * Demuestra: Geometría de icosaedro con sombreado plano (flatShading) y un anillo orbital (TorusGeometry).
+     */
     function crearCristalCosmico() {
       const group = new THREE.Group();
+
+      // Icosaedro central tipo gema poligonal
       const geom = new THREE.IcosahedronGeometry(0.85, 0);
       const mat = new THREE.MeshStandardMaterial({
         color: 0x8b5cf6,
@@ -431,27 +516,32 @@
         metalness: 0.9,
         emissive: 0x4c1d95,
         emissiveIntensity: 0.5,
-        flatShading: true
+        flatShading: true       // Renderiza cada cara plana para dar apariencia de diamante facetado
       });
       const cristal = new THREE.Mesh(geom, mat);
       group.add(cristal);
 
-      // Anillo orbital giratorio
+      // Anillo orbital exterior que gira alrededor del cristal
       const ringGeom = new THREE.TorusGeometry(1.2, 0.04, 16, 64);
       const ringMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xb45309, metalness: 0.9 });
       const ring = new THREE.Mesh(ringGeom, ringMat);
       ring.rotation.x = Math.PI / 3;
       group.add(ring);
 
+      // Animación: rotación del cristal y del anillo con levitación sinusoidal
       animLoopFunc = (t) => {
         cristal.rotation.y = t * 1.2;
         cristal.rotation.z = t * 0.6;
         ring.rotation.z = -t * 1.8;
-        group.position.y = Math.sin(t * 2) * 0.15;
+        group.position.y = Math.sin(t * 2) * 0.15; // Efecto de flotar arriba y abajo
       };
       return group;
     }
 
+    /**
+     * Modelo: Toroide Portal Neón
+     * Demuestra: Geometría de nudo toroidal (TorusKnotGeometry) paramétrico con material metálico brillante.
+     */
     function crearToroidePortal() {
       const group = new THREE.Group();
       const geom = new THREE.TorusKnotGeometry(0.65, 0.2, 100, 16);
@@ -465,6 +555,7 @@
       const torus = new THREE.Mesh(geom, mat);
       group.add(torus);
 
+      // Animación: rotación constante en múltiples ejes
       animLoopFunc = (t) => {
         torus.rotation.x = t * 0.9;
         torus.rotation.y = t * 1.4;
@@ -472,20 +563,30 @@
       return group;
     }
 
-    // B. PERSONAJES 3D
+    // --------------------------------------------------------------------------
+    // B. CATEGORÍA: PERSONAJES Y OBJETOS 3D COMPUESTOS
+    // --------------------------------------------------------------------------
+
+    /**
+     * Modelo: Robot CyberBot
+     * Demuestra: Jerarquía compuesta de múltiples geometrías primitivas (cajas, cilindros y esferas),
+     * articulaciones independientes y cinemática procedural (saludo con brazos y oscilación de cabeza).
+     */
     function crearRobotCyberBot() {
       const robot = new THREE.Group();
 
-      // Cabeza
-      const headGeom = new THREE.BoxGeometry(0.7, 0.6, 0.6);
+      // Material metálico plateado para la coraza del robot
       const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8, roughness: 0.2 });
+
+      // 1. Cabeza
+      const headGeom = new THREE.BoxGeometry(0.7, 0.6, 0.6);
       const head = new THREE.Mesh(headGeom, bodyMat);
       head.position.y = 0.55;
       robot.add(head);
 
-      // Ojos LED brillantes
+      // 2. Ojos con emisión de luz azul LED
       const eyeGeom = new THREE.CylinderGeometry(0.09, 0.09, 0.1, 16);
-      eyeGeom.rotateX(Math.PI / 2);
+      eyeGeom.rotateX(Math.PI / 2); // Orientar el cilindro hacia el frente
       const eyeMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4 });
       const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
       leftEye.position.set(-0.18, 0.58, 0.31);
@@ -493,7 +594,7 @@
       rightEye.position.set(0.18, 0.58, 0.31);
       robot.add(leftEye, rightEye);
 
-      // Antena
+      // 3. Antena con punta de luz roja parpadeante
       const antGeom = new THREE.CylinderGeometry(0.02, 0.02, 0.3);
       const ant = new THREE.Mesh(antGeom, new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.9 }));
       ant.position.set(0, 0.95, 0);
@@ -501,18 +602,18 @@
       antBall.position.set(0, 1.1, 0);
       robot.add(ant, antBall);
 
-      // Torso
+      // 4. Torso azul
       const torsoGeom = new THREE.BoxGeometry(0.8, 0.8, 0.5);
       const torso = new THREE.Mesh(torsoGeom, new THREE.MeshStandardMaterial({ color: 0x3b82f6, metalness: 0.6, roughness: 0.3 }));
       torso.position.y = -0.15;
       robot.add(torso);
 
-      // Núcleo en el pecho
+      // 5. Núcleo de energía en el pecho (reactor pulsante)
       const core = new THREE.Mesh(new THREE.SphereGeometry(0.12), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
       core.position.set(0, -0.1, 0.26);
       robot.add(core);
 
-      // Brazos flotantes articulados
+      // 6. Brazos izquierdo y derecho articulados
       const armGeom = new THREE.CylinderGeometry(0.08, 0.08, 0.6);
       const leftArm = new THREE.Mesh(armGeom, bodyMat);
       leftArm.position.set(-0.55, -0.15, 0);
@@ -520,29 +621,34 @@
       rightArm.position.set(0.55, -0.15, 0);
       robot.add(leftArm, rightArm);
 
+      // Animación procedural del robot: flotación, giro de cabeza, movimiento de brazos y parpadeo de antena
       animLoopFunc = (t) => {
-        robot.position.y = Math.sin(t * 3) * 0.12; // Flotación
-        head.rotation.y = Math.sin(t * 1.5) * 0.35; // Mirar a los lados
-        leftArm.rotation.x = Math.sin(t * 3) * 0.4;
-        rightArm.rotation.x = Math.sin(t * 3 + Math.PI) * 0.4; // Saludo
-        const pulse = 1 + Math.sin(t * 6) * 0.2;
+        robot.position.y = Math.sin(t * 3) * 0.12;              // Flotación arriba/abajo
+        head.rotation.y = Math.sin(t * 1.5) * 0.35;             // Mirar a los lados
+        leftArm.rotation.x = Math.sin(t * 3) * 0.4;             // Oscilación de brazo izquierdo
+        rightArm.rotation.x = Math.sin(t * 3 + Math.PI) * 0.4;  // Saludo desfasado con el derecho
+        const pulse = 1 + Math.sin(t * 6) * 0.2;                // Pulsación del núcleo del pecho
         core.scale.set(pulse, pulse, pulse);
-        antBall.visible = Math.sin(t * 5) > -0.5; // Parpadeo antena
+        antBall.visible = Math.sin(t * 5) > -0.5;               // Efecto estroboscópico de la antena
       };
       return robot;
     }
 
+    /**
+     * Modelo: Dron Explorador
+     * Demuestra: Distribución circular matemática mediante trigonometría (seno y coseno) para ubicar 4 hélices.
+     */
     function crearDronExplorador() {
       const drone = new THREE.Group();
 
-      // Esfera central
+      // Esfera central (chasis principal)
       const sphere = new THREE.Mesh(
         new THREE.SphereGeometry(0.45, 32, 32),
         new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.9, roughness: 0.1 })
       );
       drone.add(sphere);
 
-      // Ojo visor cibernético
+      // Visor de escaneo cibernético rojo frontal
       const visor = new THREE.Mesh(
         new THREE.SphereGeometry(0.2, 16, 16),
         new THREE.MeshBasicMaterial({ color: 0xef4444 })
@@ -550,10 +656,11 @@
       visor.position.set(0, 0.05, 0.38);
       drone.add(visor);
 
-      // 4 Rotores
+      // 4 brazos y hélices rotatorias en cruz (0, 90, 180 y 270 grados)
       const rotors = [];
       const angles = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
       angles.forEach((ang) => {
+        // Brazo de soporte
         const arm = new THREE.Mesh(
           new THREE.CylinderGeometry(0.03, 0.03, 0.5),
           new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 })
@@ -563,34 +670,44 @@
         arm.position.set(Math.cos(ang) * 0.45, 0, Math.sin(ang) * 0.45);
         drone.add(arm);
 
+        // Hélice
         const propGeom = new THREE.BoxGeometry(0.35, 0.02, 0.06);
         const propMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
         const prop = new THREE.Mesh(propGeom, propMat);
         prop.position.set(Math.cos(ang) * 0.7, 0.08, Math.sin(ang) * 0.7);
         drone.add(prop);
-        rotors.push(prop);
+        rotors.push(prop); // Guardamos la referencia para rotarla a alta velocidad en el bucle
       });
 
+      // Animación: movimiento de vuelo inestable y giro rápido de hélices
       animLoopFunc = (t) => {
         drone.position.y = Math.sin(t * 3.5) * 0.1;
         drone.rotation.y = Math.sin(t * 0.8) * 0.4;
         drone.rotation.z = Math.cos(t * 2) * 0.08;
-        rotors.forEach(r => r.rotation.y += 0.5);
+        rotors.forEach(r => r.rotation.y += 0.5); // Giro continuo de hélices
       };
       return drone;
     }
 
-    // C. FILTROS FACIALES / OVERLAYS AR
+    // --------------------------------------------------------------------------
+    // C. CATEGORÍA: FILTROS FACIALES / ACCESORIOS DE REALIDAD AUMENTADA
+    // Diseñados especialmente para superponerse en la cara usando la cámara frontal
+    // --------------------------------------------------------------------------
+
+    /**
+     * Modelo: Gafas Cyberpunk Neón
+     * Demuestra: Creación de accesorios AR con cambio de color dinámico en el espacio cromático HSL.
+     */
     function crearGafasCyberpunk() {
       const glasses = new THREE.Group();
 
-      // Montura
+      // Montura frontal oscura
       const frameGeom = new THREE.BoxGeometry(1.4, 0.35, 0.1);
       const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 });
       const frame = new THREE.Mesh(frameGeom, frameMat);
       glasses.add(frame);
 
-      // Lentes de Neón Hexagonales
+      // Cristales de neón con emisión brillante
       const lensGeom = new THREE.BoxGeometry(0.55, 0.28, 0.08);
       const lensMat = new THREE.MeshStandardMaterial({
         color: 0x00f0ff,
@@ -607,7 +724,7 @@
       rightLens.position.set(0.35, 0, 0.03);
       glasses.add(leftLens, rightLens);
 
-      // Patillas
+      // Patillas de las gafas orientadas hacia atrás en Z
       const armGeom = new THREE.BoxGeometry(0.05, 0.1, 0.9);
       const leftArm = new THREE.Mesh(armGeom, frameMat);
       leftArm.position.set(-0.68, 0, -0.45);
@@ -615,23 +732,27 @@
       rightArm.position.set(0.68, 0, -0.45);
       glasses.add(leftArm, rightArm);
 
-      // Si es cámara frontal se acomoda a la altura de los ojos
+      // Altura ajustada a la zona de los ojos
       glasses.position.set(0, 0.1, 0);
 
+      // Animación: ciclo continuo de arcoíris neón (cambio de matiz HSL en función del tiempo)
       animLoopFunc = (t) => {
-        // Pulso de color cibernético
-        const hue = (t * 0.2) % 1;
+        const hue = (t * 0.2) % 1; // Recorre el espectro cromático de 0 a 1 suavemente
         lensMat.color.setHSL(hue, 1, 0.5);
         lensMat.emissive.setHSL(hue, 1, 0.5);
       };
       return glasses;
     }
 
+    /**
+     * Modelo: Corona Real Dorada
+     * Demuestra: Cilindro abierto (open-ended), disposición en anillo de conos con rubíes en las puntas.
+     */
     function crearCoronaReal() {
       const crown = new THREE.Group();
       
-      // Base de la corona
-      const baseGeom = new THREE.CylinderGeometry(0.65, 0.75, 0.25, 32, 1, true);
+      // Base anular dorada
+      const baseGeom = new THREE.CylinderGeometry(0.65, 0.75, 0.25, 32, 1, true); // true = sin tapas superior/inferior
       const goldMat = new THREE.MeshStandardMaterial({
         color: 0xfacc15,
         metalness: 0.9,
@@ -642,15 +763,16 @@
       const base = new THREE.Mesh(baseGeom, goldMat);
       crown.add(base);
 
-      // Puntas de la corona
+      // 7 puntas de la corona con gemas de rubí
       for (let i = 0; i < 7; i++) {
         const ang = (i / 7) * Math.PI * 2;
+        // Pico cónico
         const spikeGeom = new THREE.ConeGeometry(0.12, 0.45, 16);
         const spike = new THREE.Mesh(spikeGeom, goldMat);
         spike.position.set(Math.cos(ang) * 0.65, 0.3, Math.sin(ang) * 0.65);
         crown.add(spike);
 
-        // Gemas de rubí en las puntas
+        // Gema esférica de rubí en la cima de cada pico
         const gemGeom = new THREE.SphereGeometry(0.06, 12, 12);
         const gemMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x991b1b, metalness: 0.8 });
         const gem = new THREE.Mesh(gemGeom, gemMat);
@@ -658,8 +780,10 @@
         crown.add(gem);
       }
 
-      crown.position.set(0, 0.9, 0); // Flotando sobre la cabeza
+      // Se posiciona más arriba para quedar flotando sobre la cabeza del usuario
+      crown.position.set(0, 0.9, 0);
 
+      // Animación: rotación majestuosa y levitación suave
       animLoopFunc = (t) => {
         crown.rotation.y = t * 0.6;
         crown.position.y = 0.9 + Math.sin(t * 2) * 0.08;
@@ -667,34 +791,11 @@
       return crown;
     }
 
-    function crearMascaraSciFi() {
-      const mask = new THREE.Group();
-
-      // Respirador frontal
-      const ventGeom = new THREE.CylinderGeometry(0.25, 0.35, 0.4, 6);
-      ventGeom.rotateX(Math.PI / 2);
-      const ventMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.3 });
-      const vent = new THREE.Mesh(ventGeom, ventMat);
-      vent.position.set(0, -0.2, 0.3);
-      mask.add(vent);
-
-      // Visor holográfico curvado
-      const visorGeom = new THREE.TorusGeometry(0.65, 0.1, 16, 32, Math.PI);
-      const visorMat = new THREE.MeshBasicMaterial({ color: 0x10b981, wireframe: true });
-      const visor = new THREE.Mesh(visorGeom, visorMat);
-      visor.position.set(0, 0.15, 0.2);
-      visor.rotation.z = Math.PI;
-      mask.add(visor);
-
-      animLoopFunc = (t) => {
-        visor.rotation.y = Math.sin(t * 2) * 0.15;
-      };
-      return mask;
-    }
-
-    // ==========================================
-    // 4. GESTIÓN DE ELEMENTOS EN ESCENA
-    // ==========================================
+    // ==========================================================================
+    // 4. GESTIÓN DE ELEMENTOS EN ESCENA Y GENERACIÓN DE LA INTERFAZ
+    // ==========================================================================
+    
+    // Diccionario de categorías con sus respectivos modelos y funciones generadoras
     const categorias = {
       figuras: [
         { id: 'hipercubo', nombre: 'Hipercubo', icon: '🧊', fn: crearHipercubo },
@@ -707,47 +808,59 @@
       ],
       filtros: [
         { id: 'gafas', nombre: 'Lentes Cyber', icon: '🕶️', fn: crearGafasCyberpunk },
-        { id: 'corona', nombre: 'Corona Real', icon: '👑', fn: crearCoronaReal },
-        { id: 'mascara', nombre: 'Máscara Sci-Fi', icon: '👺', fn: crearMascaraSciFi }
+        { id: 'corona', nombre: 'Corona Real', icon: '👑', fn: crearCoronaReal }
       ]
     };
 
-    let catActual = 'figuras';
-    let idSeleccionado = 'hipercubo';
+    let catActual = 'figuras';       // Categoría activa por defecto
+    let idSeleccionado = 'hipercubo'; // ID del elemento activo por defecto
 
+    /**
+     * Reemplaza el objeto 3D actual en la escena por el nuevo seleccionado por el usuario.
+     * @param {string} id - Identificador único del modelo.
+     * @param {Function} fnCreacion - Función que construye y retorna el nuevo THREE.Group.
+     */
     function seleccionarElemento(id, fnCreacion) {
       idSeleccionado = id;
       
-      // Limpiar objeto anterior
+      // 1. Eliminar el objeto anterior de la escena para evitar fugas de memoria y sobrecarga gráfica
       if (activeObject) {
         rootAnchor.remove(activeObject);
       }
       animLoopFunc = null;
 
-      // Resetear posición del ancla
+      // 2. Reiniciar posición, rotación y escala del ancla
       rootAnchor.position.set(0, 0, 0);
       rootAnchor.rotation.set(0, 0, 0);
       rootAnchor.scale.set(1, 1, 1);
 
-      // Crear nuevo objeto
+      // 3. Crear el nuevo objeto e insertarlo en el ancla principal
       activeObject = fnCreacion();
       rootAnchor.add(activeObject);
 
-      // Actualizar estilo activo en lista
+      // 4. Actualizar visualmente la tarjeta activa en el carrusel
       document.querySelectorAll('.item-card').forEach(el => {
         el.classList.toggle('active', el.dataset.id === id);
       });
     }
 
+    /**
+     * Cambia la categoría de visualización (Figuras, Personajes, Filtros) y reconstruye el carrusel inferior.
+     * @param {string} catKey - Clave de la categoría ('figuras', 'personajes', 'filtros').
+     */
     function cambiarCategoria(catKey) {
       catActual = catKey;
       
-      // Actualizar pestañas activas
+      // Actualizar el estado visual de los botones de pestañas
       document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
-        btn.classList.toggle('active', (catKey === 'figuras' && idx === 0) || (catKey === 'personajes' && idx === 1) || (catKey === 'filtros' && idx === 2));
+        btn.classList.toggle('active', 
+          (catKey === 'figuras' && idx === 0) || 
+          (catKey === 'personajes' && idx === 1) || 
+          (catKey === 'filtros' && idx === 2)
+        );
       });
 
-      // Si selecciona filtros y está en cámara trasera, sugerir o cambiar a selfie
+      // Si el usuario selecciona filtros faciales y tiene la cámara trasera, sugerir el cambio a la frontal
       if (catKey === 'filtros' && currentFacingMode === 'environment') {
         const toast = document.getElementById('hint-toast');
         toast.innerText = '💡 Consejo: Cambia a la cámara frontal para usar los filtros';
@@ -758,7 +871,7 @@
         }, 4000);
       }
 
-      // Renderizar carrusel
+      // Reconstruir dinámicamente las tarjetas del carrusel en el DOM
       const listContainer = document.getElementById('items-list');
       listContainer.innerHTML = '';
 
@@ -771,29 +884,37 @@
         listContainer.appendChild(card);
       });
 
-      // Seleccionar el primero de la categoría si no está el actual
+      // Si el elemento actualmente seleccionado no pertenece a la nueva categoría, seleccionar el primero de la lista
       const existe = categorias[catKey].find(it => it.id === idSeleccionado);
       if (!existe) {
         seleccionarElemento(categorias[catKey][0].id, categorias[catKey][0].fn);
       }
     }
 
-    // ==========================================
-    // 5. INTERACTIVIDAD TÁCTIL (ROTAR / ESCALAR)
-    // ==========================================
+    // ==========================================================================
+    // 5. INTERACTIVIDAD TÁCTIL Y DE RATÓN (ROTAR Y ESCALAR / PELLIZCAR)
+    // Permite al usuario manipular directamente el objeto 3D sobre la cámara
+    // ==========================================================================
+    
     let isDragging = false;
     let prevMousePos = { x: 0, y: 0 };
-    let initialPinchDist = null;
-    let initialScale = 1;
+    let initialPinchDist = null; // Distancia inicial entre los dos dedos para calcular el zoom
+    let initialScale = 1;        // Escala del objeto al momento de iniciar el gesto
 
+    // A. Eventos táctiles en pantallas móviles
     window.addEventListener('touchstart', (e) => {
+      // Ignorar toques sobre la interfaz de usuario (botones y carrusel)
       if (e.target.closest('#bottom-container') || e.target.closest('#top-bar')) return;
+
       if (e.touches.length === 1) {
+        // Un solo dedo: Iniciar rotación del objeto 3D
         isDragging = true;
         prevMousePos.x = e.touches[0].clientX;
         prevMousePos.y = e.touches[0].clientY;
       } else if (e.touches.length === 2) {
+        // Dos dedos: Iniciar escalado por pellizco (pinch-to-zoom)
         isDragging = false;
+        // Distancia euclidiana entre los dos dedos usando el teorema de Pitágoras (Math.hypot)
         initialPinchDist = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
@@ -804,20 +925,25 @@
 
     window.addEventListener('touchmove', (e) => {
       if (isDragging && e.touches.length === 1) {
+        // Calcular el desplazamiento en X e Y
         const deltaX = e.touches[0].clientX - prevMousePos.x;
         const deltaY = e.touches[0].clientY - prevMousePos.y;
 
-        rootAnchor.rotation.y += deltaX * 0.01;
-        rootAnchor.rotation.x += deltaY * 0.01;
+        // Modificar los ángulos de rotación de Euler del contenedor padre (rootAnchor)
+        rootAnchor.rotation.y += deltaX * 0.01; // Rotación sobre el eje vertical
+        rootAnchor.rotation.x += deltaY * 0.01; // Rotación sobre el eje horizontal
 
         prevMousePos.x = e.touches[0].clientX;
         prevMousePos.y = e.touches[0].clientY;
       } else if (e.touches.length === 2 && initialPinchDist) {
+        // Calcular la nueva distancia entre dedos
         const currentDist = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
+        // Factor de escala relativo a la distancia inicial
         const factor = currentDist / initialPinchDist;
+        // Delimitamos la escala mínima en 0.3x y máxima en 3.0x para evitar que el objeto desaparezca o sature la pantalla
         const newScale = Math.max(0.3, Math.min(3.0, initialScale * factor));
         rootAnchor.scale.set(newScale, newScale, newScale);
       }
@@ -828,13 +954,14 @@
       initialPinchDist = null;
     });
 
-    // Soporte para ratón en escritorio
+    // B. Soporte para ratón en computadoras de escritorio (pruebas y depuración)
     window.addEventListener('mousedown', (e) => {
       if (e.target.closest('#bottom-container') || e.target.closest('#top-bar')) return;
       isDragging = true;
       prevMousePos.x = e.clientX;
       prevMousePos.y = e.clientY;
     });
+
     window.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
       const deltaX = e.clientX - prevMousePos.x;
@@ -844,16 +971,21 @@
       prevMousePos.x = e.clientX;
       prevMousePos.y = e.clientY;
     });
+
     window.addEventListener('mouseup', () => isDragging = false);
 
-    // ==========================================
-    // 6. GIROSCOPIO / ORIENTACIÓN DEL DISPOSITIVO
-    // ==========================================
+    // ==========================================================================
+    // 6. GIROSCOPIO / ORIENTACIÓN DEL DISPOSITIVO (EFECTO AR SIN MARCADORES)
+    // Permite que la cámara virtual gire al mover físicamente el teléfono celular
+    // ==========================================================================
+    
     let gyroActivo = false;
     const btnGyro = document.getElementById('btn-gyro');
 
+    // Botón para alternar la activación del giroscopio
     btnGyro.addEventListener('click', async () => {
       if (!gyroActivo) {
+        // En navegadores iOS (Safari en iPhone/iPad) se requiere solicitar permiso explícito al usuario
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
           try {
             const resp = await DeviceOrientationEvent.requestPermission();
@@ -861,9 +993,10 @@
               activarGiroscopio();
             }
           } catch (e) {
-            console.warn(e);
+            console.warn('Permiso de giroscopio denegado o no soportado:', e);
           }
         } else {
+          // Android y navegadores de escritorio no requieren requestPermission explícito
           activarGiroscopio();
         }
       } else {
@@ -871,53 +1004,86 @@
       }
     });
 
+    /**
+     * Mapea los ángulos beta (inclinación adelante/atrás) y gamma (inclinación lateral)
+     * a la rotación de la cámara 3D de Three.js.
+     * @param {DeviceOrientationEvent} event - Evento con los datos de orientación física del dispositivo.
+     */
     function handleOrientation(event) {
       if (!gyroActivo) return;
+      // Convertir grados de inclinación a radianes
       const beta = event.beta ? THREE.MathUtils.degToRad(event.beta - 45) : 0;
       const gamma = event.gamma ? THREE.MathUtils.degToRad(event.gamma) : 0;
+      
+      // Aplicar una rotación suave atenuada por 0.3 a la cámara
       camera.rotation.x = beta * 0.3;
       camera.rotation.y = gamma * 0.3;
     }
 
+    /**
+     * Activa la escucha de eventos de orientación física y actualiza el botón
+     */
     function activarGiroscopio() {
       gyroActivo = true;
-      btnGyro.style.background = '#3b82f6';
+      btnGyro.style.background = '#3b82f6'; // Azul activo
       window.addEventListener('deviceorientation', handleOrientation);
     }
 
+    /**
+     * Desactiva el giroscopio y regresa la rotación de la cámara a su orientación neutral
+     */
     function desactivarGiroscopio() {
       gyroActivo = false;
-      btnGyro.style.background = 'rgba(30, 41, 59, 0.85)';
+      btnGyro.style.background = 'rgba(30, 41, 59, 0.85)'; // Color neutral
       window.removeEventListener('deviceorientation', handleOrientation);
       camera.rotation.set(0, 0, 0);
     }
 
-    // ==========================================
-    // 7. CICLO DE ANIMACIÓN Y RENDER
-    // ==========================================
+    // ==========================================================================
+    // 7. CICLO PRINCIPAL DE ANIMACIÓN Y RENDERIZADO (RENDER LOOP)
+    // ==========================================================================
+    
+    // Reloj de Three.js para obtener el tiempo transcurrido de forma independiente a la tasa de refresco (FPS)
     const clock = new THREE.Clock();
 
+    /**
+     * Función principal que se ejecuta continuamente a 60 cuadros por segundo (FPS).
+     * Solicita el próximo cuadro al navegador mediante requestAnimationFrame.
+     */
     function animate() {
       requestAnimationFrame(animate);
+
+      // Tiempo en segundos desde que inició la aplicación
       const elapsedTime = clock.getElapsedTime();
 
+      // Si el modelo activo tiene una función de animación definida, la ejecutamos pasando el tiempo
       if (animLoopFunc) {
         animLoopFunc(elapsedTime);
       }
 
+      // Dibuja la escena completa desde el punto de vista de la cámara virtual sobre el canvas
       renderer.render(scene, camera);
     }
 
+    // ==========================================================================
+    // 8. CONTROL DE REDIMENSIONAMIENTO DE VENTANA (RESPONSIVIDAD)
+    // Se ejecuta al rotar la pantalla del móvil entre vertical y horizontal o cambiar tamaño de ventana
+    // ==========================================================================
     window.addEventListener('resize', () => {
+      // 1. Actualiza la relación de aspecto de la cámara para que los objetos no se vean estirados
       camera.aspect = window.innerWidth / window.innerHeight;
+      // 2. Recalcula la matriz de proyección interna de la cámara
       camera.updateProjectionMatrix();
+      // 3. Ajusta el tamaño de renderizado del lienzo WebGL al nuevo tamaño de ventana
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // Iniciar todo
-    cambiarCategoria('figuras');
-    iniciarCamara();
-    animate();
+    // ==========================================================================
+    // INICIALIZACIÓN DE LA APLICACIÓN
+    // ==========================================================================
+    cambiarCategoria('figuras'); // Carga la categoría inicial con el primer modelo
+    iniciarCamara();             // Solicita acceso a la cámara y comienza la transmisión
+    animate();                   // Inicia el ciclo de renderizado continuo
   </script>
 </body>
 </html>
