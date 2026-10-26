@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+  <title>Animación de Realidad Aumentada - WebAR</title>
+
+  <!-- Librería A-Frame (Versión estable y compatible) -->
+  <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+  <!-- Librería AR.js para A-Frame (Versión oficial actualizada vía Githack) -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    /* Interfaz superpuesta (HUD) */
+    #ui-container {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .badge-info {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      color: #f8fafc;
+      padding: 10px 18px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 500;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.15);
+      text-align: center;
+      max-width: 90%;
+    }
+
+    .controls-panel {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      display: flex;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 10px 16px;
+      border-radius: 30px;
+      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      pointer-events: auto;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      filter: brightness(1.1);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #475569, #334155);
+    }
+
+    /* Modal para ver el marcador */
+    #marker-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 10000;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      padding: 20px;
+    }
+
+    #marker-modal img {
+      width: 250px;
+      height: 250px;
+      background: white;
+      padding: 15px;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(255,255,255,0.2);
+    }
+
+    #marker-modal p {
+      color: white;
+      margin-top: 15px;
+      text-align: center;
+      font-size: 15px;
+      max-width: 320px;
+    }
+
+    #close-modal {
+      margin-top: 15px;
+      background: #ef4444;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Interfaz de usuario -->
+  <div id="ui-container">
+    <div class="badge-info">
+      📱 Apunta tu cámara al <strong>Marcador Hiro</strong> para ver la animación 3D
+    </div>
+  </div>
+
+  <div class="controls-panel">
+    <button class="btn btn-secondary" onclick="toggleModal(true)">
+      📷 Ver Marcador
+    </button>
+    <button class="btn" onclick="cambiarColor()">
+      🎨 Color
+    </button>
+    <button class="btn" onclick="cambiarFigura()">
+      🔄 Figura
+    </button>
+  </div>
+
+  <!-- Modal para mostrar el marcador Hiro -->
+  <div id="marker-modal">
+    <img src="marcador-hiro.png" alt="Marcador Hiro" onerror="this.src='https://jeromeetienne.github.io/AR.js/data/images/HIRO.jpg'">
+    <p>Muestra este marcador en otra pantalla o imprímelo y apunta la cámara de tu celular hacia él.</p>
+    <button class="btn" id="close-modal" onclick="toggleModal(false)">Cerrar</button>
+  </div>
+
+  <!-- Escena de Realidad Aumentada -->
+  <a-scene 
+    embedded 
+    arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+    vr-mode-ui="enabled: false"
+    renderer="logarithmicDepthBuffer: true; antialias: true; colorManagement: true;">
+    
+    <!-- Marcador Hiro predeterminado -->
+    <a-marker preset="hiro" id="ar-marker">
+      
+      <!-- Contenedor animado (Figura 3D completa) -->
+      <a-entity id="figura-principal" position="0 0.6 0">
+        
+        <!-- Figura 1: Cubo 3D con rotación continua y efecto levitación -->
+        <a-box id="cubo"
+          position="0 0 0" 
+          scale="0.8 0.8 0.8" 
+          material="color: #06b6d4; metalness: 0.6; roughness: 0.2; opacity: 0.9;"
+          animation__rotar="property: rotation; to: 360 360 0; loop: true; dur: 5000; easing: linear;"
+          animation__flotar="property: position; to: 0 0.4 0; dir: alternate; loop: true; dur: 1800; easing: easeInOutQuad;">
+        </a-box>
+
+        <!-- Figura 2: Anillo / Toroide concéntrico orbitando -->
+        <a-torus id="anillo"
+          position="0 0 0"
+          radius="0.75"
+          radius-tubular="0.03"
+          material="color: #f59e0b; metalness: 0.8; roughness: 0.2;"
+          animation__giro="property: rotation; to: -360 360 0; loop: true; dur: 3500; easing: linear;">
+        </a-torus>
+
+        <!-- Figura 3: Esfera central brillante pulsante -->
+        <a-sphere id="esfera-interior"
+          position="0 0 0"
+          radius="0.25"
+          material="color: #ec4899; emissive: #ec4899; emissiveIntensity: 0.4;"
+          animation__latir="property: scale; to: 1.3 1.3 1.3; dir: alternate; loop: true; dur: 900; easing: easeInOutSine;">
+        </a-sphere>
+
+        <!-- Base decorativa sobre el plano del marcador -->
+        <a-cylinder 
+          position="0 -0.5 0" 
+          radius="0.9" 
+          height="0.05" 
+          material="color: #1e293b; opacity: 0.7; roughness: 0.8;">
+        </a-cylinder>
+
+      </a-entity>
+
+      <!-- Iluminación para dar volumen y realismo 3D -->
+      <a-light type="directional" position="2 4 2" intensity="1.2"></a-light>
+      <a-light type="ambient" intensity="0.8"></a-light>
+
+    </a-marker>
+
+    <!-- Cámara AR del dispositivo -->
+    <a-entity camera></a-entity>
+  </a-scene>
+
+  <!-- Lógica de interactividad -->
+  <script>
+    const colores = ['#06b6d4', '#10b981', '#8b5cf6', '#ef4444', '#f59e0b', '#3b82f6'];
+    let colorIndex = 0;
+
+    function cambiarColor() {
+      colorIndex = (colorIndex + 1) % colores.length;
+      const nuevoColor = colores[colorIndex];
+      const cubo = document.getElementById('cubo');
+      if (cubo) {
+        cubo.setAttribute('material', 'color', nuevoColor);
+      }
+    }
+
+    let modoFigura = 0;
+    function cambiarFigura() {
+      modoFigura = (modoFigura + 1) % 3;
+      const cubo = document.getElementById('cubo');
+      const anillo = document.getElementById('anillo');
+
+      if (modoFigura === 0) {
+        // Cubo normal con anillo
+        cubo.setAttribute('geometry', 'primitive: box; width: 0.8; height: 0.8; depth: 0.8');
+        anillo.setAttribute('visible', 'true');
+      } else if (modoFigura === 1) {
+        // Octaedro / Pirámide (cono de 4 lados)
+        cubo.setAttribute('geometry', 'primitive: cone; radiusBottom: 0.6; radiusTop: 0; segmentsRadial: 4; height: 0.9');
+        anillo.setAttribute('visible', 'true');
+      } else {
+        // Dodecaedro / Icosaedro
+        cubo.setAttribute('geometry', 'primitive: icosahedron; radius: 0.55');
+        anillo.setAttribute('visible', 'false');
+      }
+    }
+
+    function toggleModal(mostrar) {
+      document.getElementById('marker-modal').style.display = mostrar ? 'flex' : 'none';
+    }
+
+    // Detección de visibilidad del marcador para guiar al usuario
+    const marker = document.getElementById('ar-marker');
+    const badge = document.querySelector('.badge-info');
+
+    marker.addEventListener('markerFound', () => {
+      badge.innerHTML = '✨ <strong>¡Marcador detectado!</strong> Disfruta la animación 3D';
+      badge.style.background = 'rgba(16, 185, 129, 0.9)'; // Verde éxito
+    });
+
+    marker.addEventListener('markerLost', () => {
+      badge.innerHTML = '📱 Apunta tu cámara al <strong>Marcador Hiro</strong>';
+      badge.style.background = 'rgba(15, 23, 42, 0.85)';
+    });
+  </script>
+</body>
+</html>
